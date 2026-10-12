@@ -18,6 +18,22 @@ from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 import requests
 
+
+def _load_dotenv(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 
@@ -275,9 +291,9 @@ def generate_ai():
     topic = (data.get("topic") or "").strip()
     if not topic:
         return jsonify({"error": "请填写主题"}), 400
-    api_key = (data.get("api_key") or "").strip()
+    api_key = (data.get("api_key") or "").strip() or os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "请填写你的 API Key"}), 400
+        return jsonify({"error": "AI 服务未配置（请站点管理员配置 API Key）"}), 400
     try:
         title, subtitle, slides = call_llm(
             topic,

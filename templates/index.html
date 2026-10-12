@@ -134,23 +134,7 @@
           <input type="text" id="requirements" placeholder="例如：面向投资人，8 页以内，偏正式商务风">
         </div>
         <div class="card full">
-          <label>你的 API Key（用于调用大模型，按你的额度计费）</label>
-          <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
-          <div class="hint">Key 只随本次请求使用，不会保存到服务器。</div>
-          <details>
-            <summary>高级：模型与接口地址（可选）</summary>
-            <div class="row2" style="margin-top:10px">
-              <div>
-                <label>模型</label>
-                <input type="text" id="model" placeholder="gpt-4o-mini / deepseek-chat / moonshot-v1-8k">
-              </div>
-              <div>
-                <label>API 地址（Base URL）</label>
-                <input type="text" id="baseUrl" placeholder="https://api.openai.com/v1">
-              </div>
-            </div>
-            <div class="hint">兼容 OpenAI 协议的接口都可用：DeepSeek <code>https://api.deepseek.com</code>、Kimi <code>https://api.moonshot.cn/v1</code>、通义 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> 等。</div>
-          </details>
+          <div class="hint" style="margin-top:0">AI 由站点提供，你无需填写 API Key，直接生成即可。</div>
         </div>
       </div>
 
@@ -247,9 +231,6 @@
         payload = {
           topic: document.getElementById("topic").value,
           requirements: document.getElementById("requirements").value,
-          api_key: document.getElementById("apiKey").value,
-          model: document.getElementById("model").value,
-          base_url: document.getElementById("baseUrl").value,
           accent: accent,
           dark: dark,
         };
