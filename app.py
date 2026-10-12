@@ -73,6 +73,7 @@ SYSTEM_PROMPT = (
     "在尽可能多的页面自然搭配图表或图片：当该页涉及数据、对比或占比时，加上 chart；"
     "当配图能直观说明该页内容时，加上 image_query。"
     "chart 与 image_query 必须与该页文字内容直接相关，且两者都尽量多地在合适页面使用；"
+    "chart 的 data 最多 8 项；标签尽量短（不超过 10 个字符）；数值只输出纯数字，不要带百分号、逗号或单位。"
     "没有合适图表或图片的页面，省略对应字段。"
 )
 
@@ -201,10 +202,57 @@ CHART_TYPES = {
 CHART_PALETTE = ["1F3A5F", "3D5A80", "5B6B8C", "B08D3E", "4F6D5A", "7A2E39", "5A7D6C", "A6762D"]
 
 
+def _to_number(v):
+    if isinstance(v, bool):
+        raise ValueError("boolean")
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        raise ValueError("empty")
+    s = s.replace(",", "").replace("，", "").replace(" ", "").replace("＋", "+").rstrip("+")
+    if s.endswith("%"):
+        s = s[:-1]
+    mult = 1.0
+    low = s.lower()
+    if low.endswith("k") or low.endswith("千"):
+        mult = 1000.0
+        s = s[:-1]
+    elif low.endswith("w") or low.endswith("万"):
+        mult = 10000.0
+        s = s[:-1]
+    elif low.endswith("m") or low.endswith("百万"):
+        mult = 1000000.0
+        s = s[:-2] if low.endswith("百万") else s[:-1]
+    elif low.endswith("b") or low.endswith("十亿"):
+        mult = 1000000000.0
+        s = s[:-2] if low.endswith("十亿") else s[:-1]
+    return float(s) * mult
+
+
 def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
-    labels = [str(d[0]) for d in data]
-    values = [float(d[1]) for d in data]
+    rows = []
+    for d in data:
+        try:
+            label = str(d[0]).strip()
+            val = _to_number(d[1])
+        except (ValueError, TypeError):
+            continue
+        if label:
+            rows.append((label, val))
+    if not rows:
+        return None
     ct = CHART_TYPES.get(chart_type, XL_CHART_TYPE.COLUMN_CLUSTERED)
+    max_cats = 8 if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT) else 10
+
+    def shorten(label):
+        return label if len(label) <= 14 else label[:13] + "…"
+
+    rows = [(shorten(l), v) for l, v in rows][:max_cats]
+    if ct == XL_CHART_TYPE.COLUMN_CLUSTERED and any(len(l) > 8 for l, _ in rows):
+        ct = XL_CHART_TYPE.BAR_CLUSTERED
+    labels = [l for l, _ in rows]
+    values = [v for _, v in rows]
     if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
         total = sum(values) or 1.0
         values = [v / total for v in values]
@@ -221,12 +269,14 @@ def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
     series = plot.series[0]
     series.format.fill.solid()
     series.format.fill.fore_color.rgb = RGBColor.from_string(accent)
-    plot.has_data_labels = True
-    dl = plot.data_labels
-    dl.number_format = "0%" if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT) else "0.##"
-    dl.number_format_is_linked = False
-    dl.font.size = Pt(10)
-    dl.font.color.rgb = RGBColor.from_string(fg)
+    crowded = len(labels) > 6 and ct in (XL_CHART_TYPE.COLUMN_CLUSTERED, XL_CHART_TYPE.BAR_CLUSTERED)
+    plot.has_data_labels = not crowded
+    if plot.has_data_labels:
+        dl = plot.data_labels
+        dl.number_format = "0%" if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT) else "0.##"
+        dl.number_format_is_linked = False
+        dl.font.size = Pt(10)
+        dl.font.color.rgb = RGBColor.from_string(fg)
     if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
         for i in range(len(labels)):
             pt = series.points[i]
@@ -234,7 +284,7 @@ def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
             pt.format.fill.fore_color.rgb = RGBColor.from_string(CHART_PALETTE[i % len(CHART_PALETTE)])
     try:
         ca = chart.category_axis
-        ca.tick_labels.font.size = Pt(11)
+        ca.tick_labels.font.size = Pt(9 if len(labels) > 6 else 11)
         ca.tick_labels.font.color.rgb = RGBColor.from_string(sub)
         va = chart.value_axis
         va.tick_labels.font.size = Pt(9)
@@ -341,7 +391,7 @@ def parse_outline(content):
                 for r in (c.get("data") or []):
                     if isinstance(r, list) and len(r) >= 2:
                         try:
-                            rows.append([str(r[0]).strip(), float(r[1])])
+                            rows.append([str(r[0]).strip(), _to_number(r[1])])
                         except (ValueError, TypeError):
                             continue
                 if rows:
