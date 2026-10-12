@@ -298,7 +298,7 @@ def add_image_slide(prs, caption, image_bytes, accent, dark):
 def fetch_image(url):
     if not re.match(r"^https?://", url):
         raise ValueError("图片地址需以 http:// 或 https:// 开头")
-    resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     if not (resp.headers.get("Content-Type") or "").lower().startswith("image/"):
         raise ValueError("该地址不是图片")
@@ -370,7 +370,7 @@ def call_llm(topic, requirements, api_key, base_url, model):
             ],
             "temperature": 0.7,
         },
-        timeout=90,
+        timeout=45,
     )
     if resp.status_code != 200:
         detail = resp.text[:240].replace("\n", " ")
@@ -398,7 +398,7 @@ def fetch_wikimedia_image(query):
         resp = requests.get(
             "https://commons.wikimedia.org/w/api.php",
             params=params,
-            timeout=20,
+            timeout=6,
             headers={"User-Agent": "PPT-Studio/1.0"},
         )
         pages = resp.json().get("query", {}).get("pages", {})
