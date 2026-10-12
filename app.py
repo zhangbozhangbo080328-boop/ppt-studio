@@ -66,9 +66,14 @@ SYSTEM_PROMPT = (
     "你是专业的演示文稿内容策划。根据用户主题与要求，生成一份结构清晰的 PPT 大纲。"
     "只输出 JSON，不要输出任何解释、注释或 Markdown 代码块标记。"
     "JSON 格式如下："
-    '{"title": "演示标题", "subtitle": "副标题", "slides": [{"title": "页面标题", "bullets": ["要点1", "要点2"]}]}'
+    '{"title":"演示标题","subtitle":"副标题","slides":[{"title":"页面标题","bullets":["要点1"]}],'
+    '"charts":[{"type":"column|bar|pie|doughnut","title":"图表标题","data":[["标签",数值]]}],'
+    '"image_queries":["英文图片搜索关键词"]}'
     "要求：共 5-8 页；每页 2-6 个要点；每个要点不超过 24 个汉字；"
     "标题简洁有力，逻辑从背景、要点到结论层层递进。"
+    "仅当主题包含明确的数据对比时，才输出 charts（最多 1 个，数据 3-6 组、数值合理）；"
+    "仅当配图能明显增强表达时，才输出 image_queries（1-3 个简短英文关键词）；"
+    "没有对应需求时，省略 charts 与 image_queries 字段。"
 )
 
 
@@ -297,7 +302,21 @@ def parse_outline(content):
         slides.append({"title": t, "bullets": bullets[:MAX_BULLETS]})
     if not slides:
         slides = [{"title": "内容概览", "bullets": ["请补充更多主题细节后重试"]}]
-    return title, subtitle, slides
+    charts = []
+    for c in (data.get("charts") or [])[:1]:
+        ctype = str(c.get("type") or "column").lower()
+        ctitle = str(c.get("title") or "").strip()
+        rows = []
+        for r in (c.get("data") or []):
+            if isinstance(r, list) and len(r) >= 2:
+                try:
+                    rows.append([str(r[0]).strip(), float(r[1])])
+                except (ValueError, TypeError):
+                    continue
+        if rows and ctype in CHART_TYPES:
+            charts.append({"type": ctype, "title": ctitle, "data": rows})
+    queries = [str(q).strip() for q in (data.get("image_queries") or []) if str(q).strip()][:3]
+    return title, subtitle, slides, charts, queries
 
 
 def call_llm(topic, requirements, api_key, base_url, model):
@@ -327,6 +346,36 @@ def call_llm(topic, requirements, api_key, base_url, model):
     except Exception:
         raise RuntimeError("AI 返回内容无法解析，请检查模型与接口地址")
     return parse_outline(content)
+
+
+def fetch_wikimedia_image(query):
+    try:
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": "filetype:bitmap " + query,
+            "gsrnamespace": "6",
+            "gsrlimit": "1",
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": "1600",
+        }
+        resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params=params,
+            timeout=20,
+            headers={"User-Agent": "PPT-Studio/1.0"},
+        )
+        pages = resp.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            ii = (page.get("imageinfo") or [{}])[0]
+            url = ii.get("thumburl") or ii.get("url")
+            if url:
+                return url
+    except Exception:
+        pass
+    return None
 
 
 def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, images=None):
@@ -413,7 +462,7 @@ def generate_ai():
     if not api_key:
         return jsonify({"error": "AI 服务未配置（请站点管理员配置 API Key）"}), 400
     try:
-        title, subtitle, slides = call_llm(
+        title, subtitle, slides, ai_charts, ai_queries = call_llm(
             topic,
             (data.get("requirements") or "").strip(),
             api_key,
@@ -422,6 +471,24 @@ def generate_ai():
         )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 502
+    charts = list(ai_charts) + (data.get("charts") or [])
+    image_slides = []
+    for url in (data.get("images") or []):
+        url = (url or "").strip()
+        if not url:
+            continue
+        try:
+            image_slides.append((None, fetch_image(url)))
+        except Exception as exc:
+            return jsonify({"error": f"图片下载失败：{url}（{exc}）"}), 400
+    for q in ai_queries:
+        image_url = fetch_wikimedia_image(q)
+        if not image_url:
+            continue
+        try:
+            image_slides.append((None, fetch_image(image_url)))
+        except Exception:
+            continue
     buf = build_pptx(
         title,
         subtitle,
@@ -429,6 +496,8 @@ def generate_ai():
         data.get("accent") or "blue",
         bool(data.get("dark")),
         (data.get("author") or "").strip(),
+        charts,
+        image_slides,
     )
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return send_file(
