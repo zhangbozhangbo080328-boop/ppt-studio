@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import io
+import json
+import os
 import re
 from datetime import datetime
 
@@ -14,6 +16,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
+import requests
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
@@ -36,6 +39,18 @@ NIGHT_MUTED = "CBD5E1"
 SLIDE_W = 13.333
 SLIDE_H = 7.5
 MAX_BULLETS = 7
+
+DEFAULT_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+DEFAULT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+SYSTEM_PROMPT = (
+    "你是专业的演示文稿内容策划。根据用户主题与要求，生成一份结构清晰的 PPT 大纲。"
+    "只输出 JSON，不要输出任何解释、注释或 Markdown 代码块标记。"
+    "JSON 格式如下："
+    '{"title": "演示标题", "subtitle": "副标题", "slides": [{"title": "页面标题", "bullets": ["要点1", "要点2"]}]}'
+    "要求：共 5-8 页；每页 2-6 个要点；每个要点不超过 24 个汉字；"
+    "标题简洁有力，逻辑从背景、要点到结论层层递进。"
+)
 
 
 def _set_run(run, size, color, bold=False, family="PingFang SC"):
@@ -152,6 +167,53 @@ def parse_blocks(text):
     return blocks
 
 
+def parse_outline(content):
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    data = json.loads(text)
+    title = str(data.get("title") or "").strip() or "AI 生成演示"
+    subtitle = str(data.get("subtitle") or "").strip()
+    slides = []
+    for item in (data.get("slides") or [])[:10]:
+        t = str(item.get("title") or "").strip() or "未命名页面"
+        bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
+        slides.append({"title": t, "bullets": bullets[:MAX_BULLETS]})
+    if not slides:
+        slides = [{"title": "内容概览", "bullets": ["请补充更多主题细节后重试"]}]
+    return title, subtitle, slides
+
+
+def call_llm(topic, requirements, api_key, base_url, model):
+    base = (base_url or "").strip().rstrip("/") or DEFAULT_BASE_URL
+    model = (model or "").strip() or DEFAULT_MODEL
+    user_content = "主题：" + topic
+    if requirements:
+        user_content += "\n额外要求：" + requirements
+    resp = requests.post(
+        base + "/chat/completions",
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "temperature": 0.7,
+        },
+        timeout=90,
+    )
+    if resp.status_code != 200:
+        detail = resp.text[:240].replace("\n", " ")
+        raise RuntimeError(f"AI 接口返回 {resp.status_code}：{detail}")
+    try:
+        content = resp.json()["choices"][0]["message"]["content"]
+    except Exception:
+        raise RuntimeError("AI 返回内容无法解析，请检查模型与接口地址")
+    return parse_outline(content)
+
+
 def build_pptx(title, subtitle, blocks, accent_key, dark, author):
     accent = ACCENTS.get(accent_key, ACCENTS["blue"])
     prs = Presentation()
@@ -203,6 +265,42 @@ def generate():
         buf,
         as_attachment=True,
         download_name=f"presentation_{stamp}.pptx",
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+
+
+@app.route("/generate-ai", methods=["POST"])
+def generate_ai():
+    data = request.get_json(force=True, silent=True) or {}
+    topic = (data.get("topic") or "").strip()
+    if not topic:
+        return jsonify({"error": "请填写主题"}), 400
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"error": "请填写你的 API Key"}), 400
+    try:
+        title, subtitle, slides = call_llm(
+            topic,
+            (data.get("requirements") or "").strip(),
+            api_key,
+            (data.get("base_url") or "").strip(),
+            (data.get("model") or "").strip(),
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+    buf = build_pptx(
+        title,
+        subtitle,
+        slides,
+        data.get("accent") or "blue",
+        bool(data.get("dark")),
+        (data.get("author") or "").strip(),
+    )
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"ai_presentation_{stamp}.pptx",
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
 

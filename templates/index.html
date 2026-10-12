@@ -23,9 +23,15 @@
       line-height: 1.6;
     }
     .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px 60px; }
-    header { margin-bottom: 22px; }
+    header { margin-bottom: 18px; }
     header h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.3px; }
     header p { margin: 0; color: var(--muted); }
+    .modes { display: flex; background: #eef1f6; border-radius: 12px; padding: 4px; width: fit-content; margin-bottom: 20px; }
+    .modes button {
+      border: 0; background: transparent; padding: 10px 20px;
+      border-radius: 9px; cursor: pointer; font-size: 15px; color: #475569; font-weight: 500;
+    }
+    .modes button.active { background: #fff; color: var(--ink); font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,0.1); }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     .card {
       background: var(--panel);
@@ -36,7 +42,7 @@
     }
     .card.full { grid-column: 1 / -1; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #334155; }
-    input[type="text"], textarea {
+    input[type="text"], input[type="password"], textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -47,13 +53,13 @@
       background: #fbfcfe;
       transition: border-color .15s, box-shadow .15s;
     }
-    input[type="text"]:focus, textarea:focus {
+    input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
       background: #fff;
     }
-    textarea { resize: vertical; min-height: 260px; line-height: 1.7; }
+    textarea { resize: vertical; min-height: 200px; line-height: 1.7; }
     .hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
     .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
     .swatch {
@@ -64,12 +70,15 @@
     }
     .swatch:hover { transform: scale(1.08); }
     .swatch.active { border-color: var(--ink); }
-    .seg { display: flex; background: #eef1f6; border-radius: 10px; padding: 3px; }
+    .seg { display: flex; background: #eef1f6; border-radius: 10px; padding: 3px; width: fit-content; }
     .seg button {
       border: 0; background: transparent; padding: 7px 16px;
       border-radius: 8px; cursor: pointer; font-size: 14px; color: #475569;
     }
     .seg button.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    details { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #475569; }
     .actions { margin-top: 20px; display: flex; align-items: center; gap: 14px; }
     .btn {
       border: 0; border-radius: 11px; padding: 13px 26px;
@@ -84,24 +93,65 @@
     #status.ok { color: #059669; }
     #status.err { color: #dc2626; }
     .meta { font-size: 13px; color: var(--muted); }
-    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .grid, .row2 { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <h1>PPT Studio</h1>
-      <p>输入内容，一键生成原生可编辑的 PowerPoint，全程本地运行。</p>
+      <p>手动排版或 AI 生成，一键得到原生可编辑的 PowerPoint。</p>
     </header>
 
+    <div class="modes" id="modeSeg">
+      <button type="button" data-mode="manual" class="active">手动输入</button>
+      <button type="button" data-mode="ai">AI 生成</button>
+    </div>
+
     <div class="grid">
-      <div class="card">
-        <label>标题</label>
-        <input type="text" id="title" placeholder="例如：季度工作汇报">
-        <label style="margin-top:16px">副标题（可选）</label>
-        <input type="text" id="subtitle" placeholder="例如：2026 Q3 业务进展">
-        <label style="margin-top:16px">作者 / 署名（可选）</label>
-        <input type="text" id="author" placeholder="你的名字或团队">
+      <div id="manualFields" style="display: contents;">
+        <div class="card">
+          <label>标题</label>
+          <input type="text" id="title" placeholder="例如：季度工作汇报">
+          <label style="margin-top:16px">副标题（可选）</label>
+          <input type="text" id="subtitle" placeholder="例如：2026 Q3 业务进展">
+          <label style="margin-top:16px">作者 / 署名（可选）</label>
+          <input type="text" id="author" placeholder="你的名字或团队">
+        </div>
+
+        <div class="card full">
+          <label>内容</label>
+          <textarea id="content" placeholder="每页之间空一行；每页第一行是标题，下面每行一个要点。&#10;&#10;项目进展&#10;- 完成核心功能开发&#10;- 通过内测&#10;&#10;下一步计划&#10;- 灰度发布&#10;- 收集反馈"></textarea>
+          <div class="hint">空行分隔页面；第一行是页面标题，其余行自动变成要点（每页最多 7 条，超出会自动拆页）。</div>
+        </div>
+      </div>
+
+      <div id="aiFields" style="display:none; grid-column: 1 / -1; gap: 20px;">
+        <div class="card full">
+          <label>主题</label>
+          <textarea id="topic" placeholder="例如：AI 如何改变内容创作行业"></textarea>
+          <label style="margin-top:14px">额外要求（可选）</label>
+          <input type="text" id="requirements" placeholder="例如：面向投资人，8 页以内，偏正式商务风">
+        </div>
+        <div class="card full">
+          <label>你的 API Key（用于调用大模型，按你的额度计费）</label>
+          <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+          <div class="hint">Key 只随本次请求使用，不会保存到服务器。</div>
+          <details>
+            <summary>高级：模型与接口地址（可选）</summary>
+            <div class="row2" style="margin-top:10px">
+              <div>
+                <label>模型</label>
+                <input type="text" id="model" placeholder="gpt-4o-mini / deepseek-chat / moonshot-v1-8k">
+              </div>
+              <div>
+                <label>API 地址（Base URL）</label>
+                <input type="text" id="baseUrl" placeholder="https://api.openai.com/v1">
+              </div>
+            </div>
+            <div class="hint">兼容 OpenAI 协议的接口都可用：DeepSeek <code>https://api.deepseek.com</code>、Kimi <code>https://api.moonshot.cn/v1</code>、通义 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> 等。</div>
+          </details>
+        </div>
       </div>
 
       <div class="card">
@@ -113,12 +163,6 @@
           <button type="button" data-dark="1">深色封面</button>
         </div>
         <div class="meta" id="slideMeta" style="margin-top:16px">等待输入内容…</div>
-      </div>
-
-      <div class="card full">
-        <label>内容</label>
-        <textarea id="content" placeholder="每页之间空一行；每页第一行是标题，下面每行一个要点。&#10;&#10;项目进展&#10;- 完成核心功能开发&#10;- 通过内测&#10;&#10;下一步计划&#10;- 灰度发布&#10;- 收集反馈"></textarea>
-        <div class="hint">空行分隔页面；第一行是页面标题，其余行自动变成要点（每页最多 7 条，超出会自动拆页）。</div>
       </div>
     </div>
 
@@ -132,6 +176,7 @@
     const ACCENTS = {{ accents | tojson }};
     let accent = "blue";
     let dark = false;
+    let mode = "manual";
 
     const sw = document.getElementById("swatches");
     Object.entries(ACCENTS).forEach(([key, hex]) => {
@@ -155,6 +200,17 @@
       b.classList.add("active");
     });
 
+    document.getElementById("modeSeg").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      mode = b.dataset.mode;
+      [...b.parentElement.children].forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      document.getElementById("manualFields").style.display = mode === "manual" ? "contents" : "none";
+      document.getElementById("aiFields").style.display = mode === "ai" ? "grid" : "none";
+      document.getElementById("slideMeta").textContent = mode === "ai" ? "AI 将自动规划 5–8 页内容" : countSlides();
+    });
+
     function countSlides() {
       const text = document.getElementById("content").value.trim();
       if (!text) return "等待输入内容…";
@@ -168,44 +224,69 @@
       return "预计生成 " + (n + 2) + " 页（含封面与结尾）";
     }
     document.getElementById("content").addEventListener("input", () => {
-      document.getElementById("slideMeta").textContent = countSlides();
+      if (mode === "manual") document.getElementById("slideMeta").textContent = countSlides();
     });
+
+    function download(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "presentation.pptx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
 
     const status = document.getElementById("status");
     document.getElementById("generate").addEventListener("click", async () => {
       const btn = document.getElementById("generate");
-      const payload = {
-        title: document.getElementById("title").value,
-        subtitle: document.getElementById("subtitle").value,
-        author: document.getElementById("author").value,
-        content: document.getElementById("content").value,
-        accent: accent,
-        dark: dark,
-      };
+      let payload, endpoint;
+      if (mode === "ai") {
+        endpoint = "/generate-ai";
+        payload = {
+          topic: document.getElementById("topic").value,
+          requirements: document.getElementById("requirements").value,
+          api_key: document.getElementById("apiKey").value,
+          model: document.getElementById("model").value,
+          base_url: document.getElementById("baseUrl").value,
+          accent: accent,
+          dark: dark,
+        };
+      } else {
+        endpoint = "/generate";
+        payload = {
+          title: document.getElementById("title").value,
+          subtitle: document.getElementById("subtitle").value,
+          author: document.getElementById("author").value,
+          content: document.getElementById("content").value,
+          accent: accent,
+          dark: dark,
+        };
+      }
       btn.disabled = true;
       status.className = "";
-      status.textContent = "正在生成…";
+      status.textContent = mode === "ai" ? "AI 正在规划并生成…" : "正在生成…";
       try {
-        const res = await fetch("/generate", {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("生成失败（HTTP " + res.status + "）");
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "presentation.pptx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        if (!res.ok) {
+          let msg = "生成失败（HTTP " + res.status + "）";
+          try {
+            const j = await res.json();
+            if (j && j.error) msg = j.error;
+          } catch (_) {}
+          throw new Error(msg);
+        }
+        download(await res.blob());
         status.className = "ok";
         status.textContent = "已生成并开始下载";
       } catch (err) {
         status.className = "err";
-        status.textContent = "出错了：" + err.message;
+        status.textContent = err.message;
       } finally {
         btn.disabled = false;
       }
