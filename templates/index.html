@@ -159,13 +159,17 @@
           <textarea id="topic" placeholder="例如：AI 如何改变内容创作行业"></textarea>
           <label style="margin-top:14px">额外要求（可选）</label>
           <input type="text" id="requirements" placeholder="例如：面向投资人，8 页以内，偏正式商务风">
+          <label style="margin-top:14px">视觉风格</label>
+          <select id="aiStyle">
+            <option value="auto">自动匹配（推荐）</option>
+          </select>
         </div>
         <div class="card full">
-          <div class="hint" style="margin-top:0">AI 由站点提供，你只需填主题；图表和网络图片由 AI 自己决定是否使用。</div>
+          <div class="hint" style="margin-top:0">AI 由站点提供，你只需一句话描述主题；它会按内容自动挑选当下最热门、最合适的视觉风格，并自己决定是否搭配图表与网络图片。</div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="manualStyleCard">
         <label>主题色</label>
         <div class="swatches" id="swatches"></div>
         <label style="margin-top:18px">风格</label>
@@ -185,9 +189,19 @@
 
   <script>
     const ACCENTS = {{ accents | tojson }};
+    const STYLE_KEYS = {{ style_keys | tojson }};
+    const STYLE_LABELS = {{ style_labels | tojson }};
     let accent = "blue";
     let dark = false;
     let mode = "manual";
+
+    const aiStyle = document.getElementById("aiStyle");
+    STYLE_KEYS.forEach(key => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = STYLE_LABELS[key] || key;
+      aiStyle.appendChild(opt);
+    });
 
     const sw = document.getElementById("swatches");
     Object.entries(ACCENTS).forEach(([key, hex]) => {
@@ -219,6 +233,7 @@
       b.classList.add("active");
       document.getElementById("manualFields").style.display = mode === "manual" ? "contents" : "none";
       document.getElementById("aiFields").style.display = mode === "ai" ? "grid" : "none";
+      document.getElementById("manualStyleCard").style.display = mode === "manual" ? "block" : "none";
       document.getElementById("slideMeta").textContent = mode === "ai" ? "AI 将自动判断是否使用图表和网络图片" : countSlides();
     });
 
@@ -272,6 +287,7 @@
         payload = {
           topic: document.getElementById("topic").value,
           requirements: document.getElementById("requirements").value,
+          style: document.getElementById("aiStyle").value,
           accent: accent,
           dark: dark,
         };

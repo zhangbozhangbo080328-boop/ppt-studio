@@ -62,13 +62,131 @@ MAX_BULLETS = 7
 DEFAULT_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 DEFAULT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
+STYLE_KEYS = [
+    "minimal", "swiss", "bento", "glass", "clay", "brutalist", "duotone",
+    "gradient", "neon", "cyber", "dark-academia", "y2k", "typographic",
+    "business", "education", "chinese",
+]
+STYLE_LABELS = {
+    "minimal": "极简暖调",
+    "swiss": "瑞士网格",
+    "bento": "便当盒网格",
+    "glass": "玻璃拟态",
+    "clay": "黏土质感",
+    "brutalist": "新粗野主义",
+    "duotone": "双色调",
+    "gradient": "弥散渐变",
+    "neon": "极光霓虹",
+    "cyber": "赛博全息",
+    "dark-academia": "暗黑学术",
+    "y2k": "Y2K酸性",
+    "typographic": "大字报",
+    "business": "麦肯锡商务",
+    "education": "教育学术",
+    "chinese": "中式国风",
+}
+
+
+def _mix(c1, c2, t):
+    a = tuple(int(c1[i:i + 2], 16) for i in (0, 2, 4))
+    b = tuple(int(c2[i:i + 2], 16) for i in (0, 2, 4))
+    out = tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    return "".join(f"{max(0, min(255, v)):02X}" for v in out)
+
+
+def _tint(hexstr, f):
+    return _mix(hexstr, "FFFFFF", f)
+
+
+def _shade(hexstr, f):
+    return _mix(hexstr, "000000", f)
+
+
+def _styledef(dark, bg, ink, muted, accent, accent2, deco, radius=0.18,
+              card=None, card_line=None, chart=None):
+    return {
+        "dark": dark, "bg": bg, "ink": ink, "muted": muted,
+        "accent": accent, "accent2": accent2, "deco": deco,
+        "radius": radius, "card": card, "card_line": card_line,
+        "chart": chart or ["1F3A5F", "3D5A80", "5B6B8C", "B08D3E", "4F6D5A", "7A2E39", "5A7D6C", "A6762D"],
+    }
+
+
+STYLES = {
+    "minimal": _styledef(False, "FAF7F2", "1F2937", "6B7280", "D97706", "F59E0B", "minimal"),
+    "swiss": _styledef(False, "FFFFFF", "111111", "6B7280", "E11D48", "1D4ED8", "swiss",
+                       chart=["111111", "E11D48", "1D4ED8", "F59E0B", "10B981", "8B5CF6", "EC4899", "6366F1"]),
+    "bento": _styledef(False, "F4F4F5", "18181B", "71717A", "2563EB", "F59E0B", "bento", 0.16,
+                       card="FFFFFF", card_line="E4E4E7",
+                       chart=["2563EB", "F59E0B", "10B981", "8B5CF6", "EC4899", "14B8A6", "F97316", "6366F1"]),
+    "glass": _styledef(False, "E8F0FE", "1E293B", "64748B", "3B82F6", "8B5CF6", "glass", 0.22,
+                       card="F3F7FF", card_line="D6E4FF",
+                       chart=["3B82F6", "8B5CF6", "10B981", "F59E0B", "EC4899", "14B8A6"]),
+    "clay": _styledef(False, "FFF4EC", "4A3F35", "9C8F84", "F97316", "FBBF24", "clay", 0.32,
+                      card="FFFFFF", card_line="FFE4D1",
+                      chart=["F97316", "FBBF24", "10B981", "3B82F6", "8B5CF6", "EC4899"]),
+    "brutalist": _styledef(False, "F5F1EA", "111111", "4B5563", "FF4D00", "2563EB", "brutal", 0.04,
+                           chart=["FF4D00", "2563EB", "111111", "10B981", "FACC15", "EC4899"]),
+    "duotone": _styledef(False, "FFFFFF", "111827", "6B7280", "2563EB", "F59E0B", "duotone",
+                         chart=["2563EB", "111827", "F59E0B", "6B7280", "10B981", "EC4899"]),
+    "gradient": _styledef(False, "FFFFFF", "1F2937", "6B7280", "7C3AED", "06B6D4", "gradient",
+                          chart=["7C3AED", "06B6D4", "EC4899", "F59E0B", "10B981", "3B82F6"]),
+    "neon": _styledef(True, "0B0B1A", "E5E7EB", "9CA3AF", "22D3EE", "A855F7", "neon",
+                      chart=["22D3EE", "A855F7", "F43F5E", "FACC15", "34D399", "60A5FA"]),
+    "cyber": _styledef(True, "050A14", "E5E7EB", "94A3B8", "00F0FF", "FF2E88", "cyber",
+                       chart=["00F0FF", "FF2E88", "8B5CF6", "FACC15", "34D399", "F97316"]),
+    "dark-academia": _styledef(True, "1C1917", "E7E5E4", "A8A29E", "B45309", "D6A35C", "academia", 0.08,
+                               card="292524", card_line="44403C",
+                               chart=["B45309", "D6A35C", "78716C", "A16207", "9A3412", "57534E"]),
+    "y2k": _styledef(True, "0E0E10", "F4F4F5", "A1A1AA", "A3E635", "A855F7", "y2k",
+                     chart=["A3E635", "A855F7", "22D3EE", "F43F5E", "FACC15", "38BDF8"]),
+    "typographic": _styledef(False, "FFFFFF", "0A0A0A", "737373", "0A0A0A", "EF4444", "typographic",
+                             chart=["0A0A0A", "737373", "EF4444", "D4D4D4", "F59E0B", "10B981"]),
+    "business": _styledef(False, "FFFFFF", "111827", "6B7280", "0F4C81", "B91C1C", "business",
+                          chart=["0F4C81", "1F6FB2", "6B7280", "B91C1C", "0EA5E9", "9CA3AF"]),
+    "education": _styledef(False, "FFFFFF", "1F2937", "64748B", "1E6FD9", "10B981", "education",
+                           chart=["1E6FD9", "10B981", "F59E0B", "8B5CF6", "EC4899", "6366F1"]),
+    "chinese": _styledef(False, "FBF7F0", "2D2A26", "8C8378", "B23A2E", "C9A45C", "chinese",
+                         chart=["B23A2E", "C9A45C", "2D2A26", "8C8378", "7A2E39", "A6762D"]),
+}
+
+
+def _base_style(accent_hex, dark):
+    return {
+        "dark": bool(dark), "bg": NIGHT if dark else PAPER,
+        "ink": PAPER if dark else INK, "muted": NIGHT_MUTED if dark else MUTED,
+        "accent": accent_hex,
+        "accent2": _tint(accent_hex, 0.35) if not dark else _shade(accent_hex, 0.35),
+        "deco": "bar", "radius": 0.18, "card": None, "card_line": None, "chart": CHART_PALETTE,
+    }
+
+
+def resolve_style(style_key=None, accent_key="blue", dark=False):
+    if style_key and style_key in STYLES:
+        st = dict(STYLES[style_key])
+        st["key"] = style_key
+        st["label"] = STYLE_LABELS[style_key]
+        return st
+    st = _base_style(ACCENTS.get(accent_key, ACCENTS["blue"]), dark)
+    st["key"] = accent_key or "blue"
+    st["label"] = "自定义"
+    return st
+
+
 SYSTEM_PROMPT = (
-    "你是专业的演示文稿内容策划。根据用户主题与要求，生成一份结构清晰的 PPT 大纲。"
+    "你是专业的演示文稿内容与视觉策划。根据用户主题与要求，生成一份结构清晰、符合当下流行设计趋势的 PPT 大纲。"
     "只输出 JSON，不要输出任何解释、注释或 Markdown 代码块标记。"
     "JSON 格式如下："
-    '{"title":"演示标题","subtitle":"副标题","slides":[{"title":"页面标题","bullets":["要点1"],'
+    '{"title":"演示标题","subtitle":"副标题","style":"风格标识",'
+    '"slides":[{"title":"页面标题","bullets":["要点1"],'
     '"chart":{"type":"column|bar|pie|doughnut","title":"图表标题","data":[["标签",数值]]},'
     '"image_query":"该页主题的英文图片关键词"}]}'
+    "style 必须从下面选择并填入，代表整份 PPT 的视觉风格，要和主题气质最匹配："
+    "minimal(极简暖调)、swiss(瑞士网格)、bento(便当盒网格)、glass(玻璃拟态)、clay(黏土质感)、"
+    "brutalist(新粗野主义)、duotone(双色调)、gradient(弥散渐变)、neon(极光霓虹)、cyber(赛博全息)、"
+    "dark-academia(暗黑学术)、y2k(Y2K酸性)、typographic(大字报)、business(麦肯锡商务)、education(教育学术)、chinese(中式国风)。"
+    "如果用户在主题或额外要求里直接点名某种风格（例如「赛博朋克风」「麦肯锡咨询风」「中式」），必须优先满足并把对应 style 填入；"
+    "否则根据主题内容自动挑选最热门、最合适的一种。"
     "要求：共 6-10 页；每页 3-5 个要点；每个要点不超过 22 个汉字；标题简洁有力。"
     "在尽可能多的页面自然搭配图表或图片：当该页涉及数据、对比或占比时，加上 chart；"
     "当配图能直观说明该页内容时，加上 image_query。"
@@ -109,6 +227,23 @@ def _rect(slide, x, y, w, h, fill, shape=MSO_SHAPE.RECTANGLE, radius=None):
     return sp
 
 
+def _card(slide, x, y, w, h, fill, line=None, radius=0.18, line_w=1.0):
+    sp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+    sp.fill.solid()
+    sp.fill.fore_color.rgb = RGBColor.from_string(fill)
+    sp.shadow.inherit = False
+    try:
+        sp.adjustments[0] = radius
+    except Exception:
+        pass
+    if line:
+        sp.line.color.rgb = RGBColor.from_string(line)
+        sp.line.width = Pt(line_w)
+    else:
+        sp.line.fill.background()
+    return sp
+
+
 def _text(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LEFT,
           anchor=MSO_ANCHOR.TOP, family="PingFang SC", line_spacing=None):
     tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
@@ -133,57 +268,149 @@ def _blank(prs):
     return prs.slides.add_slide(prs.slide_layouts[6])
 
 
-def _cover(prs, title, subtitle, author, accent, dark):
+def _decorate_cover(s, style):
+    deco = style.get("deco", "bar")
+    a = style["accent"]
+    a2 = style["accent2"]
+    line = _mix(style["bg"], style["ink"], 0.08)
+    if deco == "minimal":
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+        _rect(s, 0.9, 0.95, 0.22, 0.22, a, MSO_SHAPE.OVAL)
+    elif deco == "swiss":
+        for gx in (3.2, 6.6, 10.0):
+            _rect(s, gx, 0, 0.015, SLIDE_H, line)
+        for gy in (2.5, 5.0):
+            _rect(s, 0, gy, SLIDE_W, 0.015, line)
+        _rect(s, 10.7, 0.85, 1.55, 1.55, a)
+        _rect(s, 10.9, 2.55, 1.1, 0.16, a2)
+    elif deco == "bento":
+        _card(s, 8.45, 1.05, 4.0, 2.45, _tint(a, 0.9), None, 0.12)
+        _card(s, 8.45, 3.65, 1.95, 2.45, _tint(a2, 0.86), None, 0.12)
+        _card(s, 10.5, 3.65, 1.95, 2.45, _tint(a, 0.74), None, 0.12)
+    elif deco == "glass":
+        _card(s, 0.7, 1.35, 5.7, 2.7, _tint(a, 0.9), _tint(a, 0.62), 0.22)
+        _card(s, 7.0, 4.35, 5.5, 2.25, _tint(a2, 0.9), _tint(a2, 0.62), 0.22)
+    elif deco == "clay":
+        _rect(s, 10.0, 0.7, 2.45, 2.45, _tint(a, 0.82), MSO_SHAPE.OVAL)
+        _rect(s, 8.8, 4.6, 3.7, 2.0, _tint(a2, 0.8), MSO_SHAPE.ROUNDED_RECTANGLE, 0.5)
+    elif deco == "brutal":
+        _rect(s, 0.12, 0.12, SLIDE_W - 0.24, SLIDE_H - 0.24, style["ink"])
+        _rect(s, 0.34, 0.34, SLIDE_W - 0.68, SLIDE_H - 0.68, style["bg"])
+        _rect(s, 11.0, 0.9, 1.6, 1.6, a2)
+        _rect(s, 10.8, 1.1, 1.6, 1.6, a)
+    elif deco == "duotone":
+        _rect(s, 0, 0, SLIDE_W / 2, SLIDE_H, _tint(a, 0.93))
+        _rect(s, SLIDE_W / 2, 0, SLIDE_W / 2, SLIDE_H, _tint(a2, 0.93))
+        _rect(s, 0.9, 0.85, 0.9, 0.9, a, MSO_SHAPE.OVAL)
+        _rect(s, 11.55, 5.75, 0.9, 0.9, a2, MSO_SHAPE.OVAL)
+    elif deco == "gradient":
+        cols = [_mix(a, a2, t) for t in (0, 0.25, 0.5, 0.75, 1.0)]
+        for i, c in enumerate(cols):
+            _rect(s, i * 2.6666, 0, 2.6666, 2.15, c)
+        _rect(s, 10.6, 3.9, 2.0, 2.0, _mix(a, a2, 0.5), MSO_SHAPE.OVAL)
+    elif deco in ("neon", "cyber"):
+        _rect(s, 10.15, 0.9, 2.3, 2.3, a2, MSO_SHAPE.ROUNDED_RECTANGLE, 0.32)
+        _rect(s, 10.5, 1.25, 1.6, 1.6, a, MSO_SHAPE.ROUNDED_RECTANGLE, 0.36)
+    elif deco == "academia":
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+        _rect(s, 0.9, 0.85, 0.34, SLIDE_H - 1.7, a2)
+        _rect(s, 1.32, 0.85, 0.07, SLIDE_H - 1.7, _shade(a2, 0.25))
+    elif deco == "y2k":
+        _rect(s, 9.75, 0.75, 2.65, 2.65, a, MSO_SHAPE.OVAL)
+        _rect(s, 10.08, 1.08, 2.0, 2.0, a2, MSO_SHAPE.OVAL)
+        _rect(s, 0, SLIDE_H - 0.5, SLIDE_W, 0.5, a)
+    elif deco == "typographic":
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+        _rect(s, 0.9, 5.55, 1.45, 0.5, a2)
+    elif deco in ("business", "education", "chinese"):
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+        _rect(s, 0, 0, SLIDE_W, 0.08, a2)
+    else:
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+
+
+def _decorate_content(s, style):
+    deco = style.get("deco", "bar")
+    a = style["accent"]
+    a2 = style["accent2"]
+    if deco == "brutal":
+        _rect(s, 0.12, 0.12, SLIDE_W - 0.24, SLIDE_H - 0.24, style["ink"])
+        _rect(s, 0.34, 0.34, SLIDE_W - 0.68, SLIDE_H - 0.68, style["bg"])
+    elif deco == "duotone":
+        _rect(s, 0, 0, SLIDE_W / 2, SLIDE_H, _tint(a, 0.94))
+        _rect(s, SLIDE_W / 2, 0, SLIDE_W / 2, SLIDE_H, _tint(a2, 0.94))
+    elif deco == "gradient":
+        cols = [_mix(a, a2, t) for t in (0, 0.25, 0.5, 0.75, 1.0)]
+        for i, c in enumerate(cols):
+            _rect(s, i * 2.6666, 0, 2.6666, 0.55, c)
+    else:
+        _rect(s, 0, 0, 0.18, SLIDE_H, a)
+        if deco != "minimal":
+            _rect(s, 0, 0, SLIDE_W, 0.06, a2)
+
+
+def _cover(prs, title, subtitle, author, style):
     s = _blank(prs)
-    bg = NIGHT if dark else PAPER
-    fg = PAPER if dark else INK
-    sub = NIGHT_MUTED if dark else MUTED
-    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
-    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
-    _rect(s, 0.9, 0.95, 0.22, 0.22, accent, MSO_SHAPE.OVAL)
+    fg = style["ink"]
+    sub = style["muted"]
+    accent = style["accent"]
+    deco = style.get("deco", "bar")
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, style["bg"])
+    _decorate_cover(s, style)
+    title_color = fg
+    title_size = 54 if deco == "typographic" else 46
     _text(s, 0.9, 1.7, 11.5, 0.5, "PPT STUDIO · " + datetime.now().strftime("%Y-%m-%d"), 17, accent, True)
-    _text(s, 0.9, 2.35, 11.5, 1.9, title, 46, fg, True)
+    _text(s, 0.9, 2.35, 11.5, 1.9, title, title_size, title_color, True)
     if subtitle:
-        _text(s, 0.9, 3.75, 11.5, 0.8, subtitle, 22, sub)
-    _rect(s, 0.9, 4.55, 1.15, 0.09, accent)
+        _text(s, 0.9, 3.95, 11.5, 0.8, subtitle, 22, sub)
+    _rect(s, 0.9, 4.85, 1.15, 0.09, accent)
     if author:
-        _text(s, 0.9, 5.15, 11.5, 0.5, author, 17, sub)
+        _text(s, 0.9, 5.35, 11.5, 0.5, author, 17, sub)
 
 
-def _content(prs, title, bullets, accent, dark, page_no, total, chart=None, image=None):
+def _content(prs, title, bullets, style, page_no, total, chart=None, image=None):
     s = _blank(prs)
-    bg = NIGHT if dark else PAPER
-    fg = PAPER if dark else INK
-    sub = NIGHT_MUTED if dark else MUTED
-    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
-    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
+    fg = style["ink"]
+    sub = style["muted"]
+    accent = style["accent"]
+    radius = style.get("radius", 0.18)
+    card = style.get("card")
+    card_line = style.get("card_line")
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, style["bg"])
+    _decorate_content(s, style)
     _rect(s, 0.9, 0.78, 0.42, 0.42, accent, MSO_SHAPE.ROUNDED_RECTANGLE, 0.25)
     _text(s, 0.9, 0.9, 0.42, 0.42, str(page_no), 18, PAPER, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
     _text(s, 1.55, 0.82, 10.8, 0.8, title, 30, fg, True)
     _text(s, 1.55, 1.55, 10.8, 0.4, f"{page_no} / {total}", 13, sub)
     if chart or image is not None:
         y = 2.05
-        for b in bullets[:5]:
-            _rect(s, 0.95, y + 0.08, 0.12, 0.12, accent, MSO_SHAPE.OVAL)
-            _text(s, 1.3, y, 5.35, 0.75, b, 18, fg)
-            y += 0.86
         vx, vy, vw, vh = 6.8, 2.15, 5.75, 4.85
+        if card:
+            _card(s, 0.82, 1.95, 5.85, 5.05, card, card_line, radius)
+            _card(s, vx - 0.12, vy - 0.18, vw + 0.24, vh + 0.3, card, card_line, radius)
+        for b in bullets[:5]:
+            _rect(s, 1.12, y + 0.08, 0.12, 0.12, accent, MSO_SHAPE.OVAL)
+            _text(s, 1.48, y, 5.0, 0.75, b, 18, fg)
+            y += 0.86
         if chart:
             if chart.get("title"):
                 _text(s, vx, 1.78, vw, 0.34, chart["title"], 15, sub, True)
-            _add_chart(s, chart.get("type"), chart.get("data"), accent, dark, vx, vy, vw, vh)
+            _add_chart(s, chart.get("type"), chart.get("data"), style, vx, vy, vw, vh)
         elif image is not None:
             _add_fitted_image(s, image, vx, vy, vw, vh)
     else:
         y = 2.25
+        if card:
+            _card(s, 0.82, 2.05, 11.7, 4.9, card, card_line, radius)
         for b in bullets:
-            _rect(s, 0.95, y + 0.09, 0.13, 0.13, accent, MSO_SHAPE.OVAL)
-            _text(s, 1.35, y, 10.9, 0.85, b, 19, fg)
+            _rect(s, 1.12, y + 0.09, 0.13, 0.13, accent, MSO_SHAPE.OVAL)
+            _text(s, 1.52, y, 10.7, 0.85, b, 19, fg)
             y += 0.72
 
 
-def _ending(prs, subtitle, accent):
+def _ending(prs, subtitle, style):
     s = _blank(prs)
+    accent = style["accent"]
     _rect(s, 0, 0, SLIDE_W, SLIDE_H, NIGHT)
     _rect(s, 0, 0, SLIDE_W, 0.16, accent)
     _text(s, 0.9, 2.7, 11.5, 1.2, "谢谢观看", 48, PAPER, True)
@@ -230,7 +457,7 @@ def _to_number(v):
     return float(s) * mult
 
 
-def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
+def _add_chart(slide, chart_type, data, style, x, y, w, h):
     rows = []
     for d in data:
         try:
@@ -256,8 +483,10 @@ def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
     if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
         total = sum(values) or 1.0
         values = [v / total for v in values]
-    fg = PAPER if dark else INK
-    sub = NIGHT_MUTED if dark else MUTED
+    fg = style["ink"]
+    sub = style["muted"]
+    accent = style["accent"]
+    dark = style["dark"]
     chart_data = CategoryChartData()
     chart_data.categories = labels
     chart_data.add_series("数值", values)
@@ -281,7 +510,8 @@ def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
         for i in range(len(labels)):
             pt = series.points[i]
             pt.format.fill.solid()
-            pt.format.fill.fore_color.rgb = RGBColor.from_string(CHART_PALETTE[i % len(CHART_PALETTE)])
+            palette = style["chart"]
+            pt.format.fill.fore_color.rgb = RGBColor.from_string(palette[i % len(palette)])
     try:
         ca = chart.category_axis
         ca.tick_labels.font.size = Pt(9 if len(labels) > 6 else 11)
@@ -290,7 +520,7 @@ def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
         va.tick_labels.font.size = Pt(9)
         va.tick_labels.font.color.rgb = RGBColor.from_string(sub)
         va.has_major_gridlines = True
-        va.major_gridlines.format.line.color.rgb = RGBColor.from_string("334155" if dark else "E7E1D3")
+        va.major_gridlines.format.line.color.rgb = RGBColor.from_string("334155" if dark else "E5E7EB")
     except Exception:
         pass
     return chart
@@ -311,25 +541,21 @@ def _add_fitted_image(slide, image_bytes, x, y, w, h):
         return False
 
 
-def add_chart_slide(prs, title, chart_type, data, accent, dark):
+def add_chart_slide(prs, title, chart_type, data, style):
     s = _blank(prs)
-    bg = NIGHT if dark else PAPER
-    fg = PAPER if dark else INK
-    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
-    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
-    _text(s, 0.9, 0.82, 11.5, 0.8, title or "数据图表", 28, fg, True)
-    _add_chart(s, chart_type, data, accent, dark, 0.9, 1.8, 11.5, 5.25)
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, style["bg"])
+    _decorate_content(s, style)
+    _text(s, 0.9, 0.82, 11.5, 0.8, title or "数据图表", 28, style["ink"], True)
+    _add_chart(s, chart_type, data, style, 0.9, 1.8, 11.5, 5.25)
     return s
 
 
-def add_image_slide(prs, caption, image_bytes, accent, dark):
+def add_image_slide(prs, caption, image_bytes, style):
     s = _blank(prs)
-    bg = NIGHT if dark else PAPER
-    fg = PAPER if dark else INK
-    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
-    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, style["bg"])
+    _decorate_content(s, style)
     if caption:
-        _text(s, 0.9, 0.6, 11.5, 0.7, caption, 22, fg, True)
+        _text(s, 0.9, 0.6, 11.5, 0.7, caption, 22, style["ink"], True)
     try:
         img = Image.open(io.BytesIO(image_bytes))
         iw, ih = img.size
@@ -400,7 +626,10 @@ def parse_outline(content):
         slides.append({"title": t, "bullets": bullets, "chart": chart, "image_query": iq or None})
     if not slides:
         slides = [{"title": "内容概览", "bullets": ["请补充更多主题细节后重试"], "chart": None, "image_query": None}]
-    return title, subtitle, slides
+    style_key = str(data.get("style") or "").strip().lower()
+    if style_key not in STYLES:
+        style_key = None
+    return title, subtitle, slides, style_key
 
 
 def call_llm(topic, requirements, api_key, base_url, model):
@@ -462,12 +691,11 @@ def fetch_wikimedia_image(query):
     return None
 
 
-def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, images=None):
-    accent = ACCENTS.get(accent_key, ACCENTS["blue"])
+def build_pptx(title, subtitle, blocks, style, author, charts=None, images=None):
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
-    _cover(prs, title, subtitle, author, accent, dark)
+    _cover(prs, title, subtitle, author, style)
     if not blocks:
         blocks = [{"title": "从这里开始", "bullets": ["在左侧内容框里输入你的要点", "空行分隔每一页", "每页第一行是标题，其余是要点"], "chart": None, "image": None}]
     slides = []
@@ -483,17 +711,17 @@ def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, i
             })
     total = len(slides)
     for i, sd in enumerate(slides, start=1):
-        _content(prs, sd["title"], sd["bullets"], accent, dark, i, total, sd.get("chart"), sd.get("image"))
+        _content(prs, sd["title"], sd["bullets"], style, i, total, sd.get("chart"), sd.get("image"))
     for spec in (charts or []):
         try:
             data = [(str(r[0]), r[1]) for r in (spec.get("data") or []) if len(r) >= 2]
             if data:
-                add_chart_slide(prs, spec.get("title") or "", spec.get("type") or "column", data, accent, dark)
+                add_chart_slide(prs, spec.get("title") or "", spec.get("type") or "column", data, style)
         except Exception:
             continue
     for caption, img_bytes in (images or []):
-        add_image_slide(prs, caption, img_bytes, accent, dark)
-    _ending(prs, subtitle, accent)
+        add_image_slide(prs, caption, img_bytes, style)
+    _ending(prs, subtitle, style)
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
@@ -502,7 +730,7 @@ def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, i
 
 @app.route("/")
 def index():
-    return render_template("index.html", accents=ACCENTS)
+    return render_template("index.html", accents=ACCENTS, style_keys=STYLE_KEYS, style_labels=STYLE_LABELS)
 
 
 @app.route("/health")
@@ -530,7 +758,8 @@ def generate():
             image_slides.append((None, fetch_image(url)))
         except Exception as exc:
             return jsonify({"error": f"图片下载失败：{url}（{exc}）"}), 400
-    buf = build_pptx(title, subtitle, blocks, accent, dark, author, charts, image_slides)
+    style = resolve_style(None, accent, dark)
+    buf = build_pptx(title, subtitle, blocks, style, author, charts, image_slides)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return send_file(
         buf,
@@ -550,7 +779,7 @@ def generate_ai():
     if not api_key:
         return jsonify({"error": "AI 服务未配置（请站点管理员配置 API Key）"}), 400
     try:
-        title, subtitle, slides = call_llm(
+        title, subtitle, slides, ai_style = call_llm(
             topic,
             (data.get("requirements") or "").strip(),
             api_key,
@@ -559,6 +788,9 @@ def generate_ai():
         )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 502
+    req_style = (data.get("style") or "auto").strip().lower()
+    style_key = req_style if req_style in STYLES else ai_style
+    style = resolve_style(style_key, data.get("accent") or "blue", bool(data.get("dark")))
     for sd in slides:
         sd["image"] = None
         iq = sd.get("image_query")
@@ -575,8 +807,7 @@ def generate_ai():
         title,
         subtitle,
         slides,
-        data.get("accent") or "blue",
-        bool(data.get("dark")),
+        style,
         (data.get("author") or "").strip(),
         [],
         [],
