@@ -124,6 +124,33 @@
           <textarea id="content" placeholder="每页之间空一行；每页第一行是标题，下面每行一个要点。&#10;&#10;项目进展&#10;- 完成核心功能开发&#10;- 通过内测&#10;&#10;下一步计划&#10;- 灰度发布&#10;- 收集反馈"></textarea>
           <div class="hint">空行分隔页面；第一行是页面标题，其余行自动变成要点（每页最多 7 条，超出会自动拆页）。</div>
         </div>
+
+        <div class="card full">
+          <label>数据图表（可选）</label>
+          <div class="row2">
+            <div>
+              <label>图表类型</label>
+              <select id="chartType">
+                <option value="column">柱状图</option>
+                <option value="bar">条形图</option>
+                <option value="pie">饼图</option>
+                <option value="doughnut">环形图</option>
+              </select>
+            </div>
+            <div>
+              <label>图表标题</label>
+              <input type="text" id="chartTitle" placeholder="例如：各部门业绩对比">
+            </div>
+          </div>
+          <label style="margin-top:12px">数据（每行「名称,数值」）</label>
+          <textarea id="chartData" style="min-height:110px" placeholder="部门A,120&#10;部门B,86&#10;部门C,64"></textarea>
+        </div>
+
+        <div class="card full">
+          <label>网络图片（可选，每行一个图片 URL）</label>
+          <textarea id="imageUrls" style="min-height:90px" placeholder="https://example.com/pic.jpg"></textarea>
+          <div class="hint">图片会在服务器端下载并嵌入 PPT，每张图一页。</div>
+        </div>
       </div>
 
       <div id="aiFields" style="display:none; grid-column: 1 / -1; gap: 20px;">
@@ -134,35 +161,8 @@
           <input type="text" id="requirements" placeholder="例如：面向投资人，8 页以内，偏正式商务风">
         </div>
         <div class="card full">
-          <div class="hint" style="margin-top:0">AI 由站点提供，你无需填写 API Key，直接生成即可。</div>
+          <div class="hint" style="margin-top:0">AI 由站点提供，你只需填主题；图表和网络图片由 AI 自己决定是否使用。</div>
         </div>
-      </div>
-
-      <div class="card full">
-        <label>数据图表（可选）</label>
-        <div class="row2">
-          <div>
-            <label>图表类型</label>
-            <select id="chartType">
-              <option value="column">柱状图</option>
-              <option value="bar">条形图</option>
-              <option value="pie">饼图</option>
-              <option value="doughnut">环形图</option>
-            </select>
-          </div>
-          <div>
-            <label>图表标题</label>
-            <input type="text" id="chartTitle" placeholder="例如：各部门业绩对比">
-          </div>
-        </div>
-        <label style="margin-top:12px">数据（每行「名称,数值」）</label>
-        <textarea id="chartData" style="min-height:110px" placeholder="部门A,120&#10;部门B,86&#10;部门C,64"></textarea>
-      </div>
-
-      <div class="card full">
-        <label>网络图片（可选，每行一个图片 URL）</label>
-        <textarea id="imageUrls" style="min-height:90px" placeholder="https://example.com/pic.jpg"></textarea>
-        <div class="hint">手动模式直接嵌入这些图片；AI 模式也会按主题自动抓取相关网络图片。</div>
       </div>
 
       <div class="card">
@@ -219,7 +219,7 @@
       b.classList.add("active");
       document.getElementById("manualFields").style.display = mode === "manual" ? "contents" : "none";
       document.getElementById("aiFields").style.display = mode === "ai" ? "grid" : "none";
-      document.getElementById("slideMeta").textContent = mode === "ai" ? "AI 将自动规划内容，并按需生成图表、抓取网络图片" : countSlides();
+      document.getElementById("slideMeta").textContent = mode === "ai" ? "AI 将自动判断是否使用图表和网络图片" : countSlides();
     });
 
     function countSlides() {
@@ -275,19 +275,6 @@
           accent: accent,
           dark: dark,
         };
-        const chartText = document.getElementById("chartData").value.trim();
-        if (chartText) {
-          const d = parseChartData(chartText);
-          if (d.length) {
-            payload.charts = [{
-              type: document.getElementById("chartType").value,
-              title: document.getElementById("chartTitle").value.trim(),
-              data: d,
-            }];
-          }
-        }
-        const imgText = document.getElementById("imageUrls").value.trim();
-        if (imgText) payload.images = imgText.split("\n").map(s => s.trim()).filter(Boolean);
       } else {
         endpoint = "/generate";
         payload = {
