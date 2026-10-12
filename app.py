@@ -66,14 +66,14 @@ SYSTEM_PROMPT = (
     "你是专业的演示文稿内容策划。根据用户主题与要求，生成一份结构清晰的 PPT 大纲。"
     "只输出 JSON，不要输出任何解释、注释或 Markdown 代码块标记。"
     "JSON 格式如下："
-    '{"title":"演示标题","subtitle":"副标题","slides":[{"title":"页面标题","bullets":["要点1"]}],'
-    '"charts":[{"type":"column|bar|pie|doughnut","title":"图表标题","data":[["标签",数值]]}],'
-    '"image_queries":["英文图片搜索关键词"]}'
-    "要求：共 5-8 页；每页 2-6 个要点；每个要点不超过 24 个汉字；"
-    "标题简洁有力，逻辑从背景、要点到结论层层递进。"
-    "仅当主题包含明确的数据对比时，才输出 charts（最多 1 个，数据 3-6 组、数值合理）；"
-    "仅当配图能明显增强表达时，才输出 image_queries（1-3 个简短英文关键词）；"
-    "没有对应需求时，省略 charts 与 image_queries 字段。"
+    '{"title":"演示标题","subtitle":"副标题","slides":[{"title":"页面标题","bullets":["要点1"],'
+    '"chart":{"type":"column|bar|pie|doughnut","title":"图表标题","data":[["标签",数值]]},'
+    '"image_query":"该页主题的英文图片关键词"}]}'
+    "要求：共 6-10 页；每页 3-5 个要点；每个要点不超过 22 个汉字；标题简洁有力。"
+    "在尽可能多的页面自然搭配图表或图片：当该页涉及数据、对比或占比时，加上 chart；"
+    "当配图能直观说明该页内容时，加上 image_query。"
+    "chart 与 image_query 必须与该页文字内容直接相关，且两者都尽量多地在合适页面使用；"
+    "没有合适图表或图片的页面，省略对应字段。"
 )
 
 
@@ -149,7 +149,7 @@ def _cover(prs, title, subtitle, author, accent, dark):
         _text(s, 0.9, 5.15, 11.5, 0.5, author, 17, sub)
 
 
-def _content(prs, title, bullets, accent, dark, page_no, total):
+def _content(prs, title, bullets, accent, dark, page_no, total, chart=None, image=None):
     s = _blank(prs)
     bg = NIGHT if dark else PAPER
     fg = PAPER if dark else INK
@@ -160,11 +160,25 @@ def _content(prs, title, bullets, accent, dark, page_no, total):
     _text(s, 0.9, 0.9, 0.42, 0.42, str(page_no), 18, PAPER, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
     _text(s, 1.55, 0.82, 10.8, 0.8, title, 30, fg, True)
     _text(s, 1.55, 1.55, 10.8, 0.4, f"{page_no} / {total}", 13, sub)
-    y = 2.25
-    for b in bullets:
-        _rect(s, 0.95, y + 0.09, 0.13, 0.13, accent, MSO_SHAPE.OVAL)
-        _text(s, 1.35, y, 10.9, 0.85, b, 19, fg)
-        y += 0.72
+    if chart or image is not None:
+        y = 2.05
+        for b in bullets[:5]:
+            _rect(s, 0.95, y + 0.08, 0.12, 0.12, accent, MSO_SHAPE.OVAL)
+            _text(s, 1.3, y, 5.35, 0.75, b, 18, fg)
+            y += 0.86
+        vx, vy, vw, vh = 6.8, 2.15, 5.75, 4.85
+        if chart:
+            if chart.get("title"):
+                _text(s, vx, 1.78, vw, 0.34, chart["title"], 15, sub, True)
+            _add_chart(s, chart.get("type"), chart.get("data"), accent, dark, vx, vy, vw, vh)
+        elif image is not None:
+            _add_fitted_image(s, image, vx, vy, vw, vh)
+    else:
+        y = 2.25
+        for b in bullets:
+            _rect(s, 0.95, y + 0.09, 0.13, 0.13, accent, MSO_SHAPE.OVAL)
+            _text(s, 1.35, y, 10.9, 0.85, b, 19, fg)
+            y += 0.72
 
 
 def _ending(prs, subtitle, accent):
@@ -187,26 +201,19 @@ CHART_TYPES = {
 CHART_PALETTE = ["1F3A5F", "3D5A80", "5B6B8C", "B08D3E", "4F6D5A", "7A2E39", "5A7D6C", "A6762D"]
 
 
-def add_chart_slide(prs, title, chart_type, data, accent, dark):
-    s = _blank(prs)
-    bg = NIGHT if dark else PAPER
-    fg = PAPER if dark else INK
-    sub = NIGHT_MUTED if dark else MUTED
-    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
-    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
-    _text(s, 0.9, 0.82, 11.5, 0.8, title or "数据图表", 28, fg, True)
-
+def _add_chart(slide, chart_type, data, accent, dark, x, y, w, h):
     labels = [str(d[0]) for d in data]
     values = [float(d[1]) for d in data]
     ct = CHART_TYPES.get(chart_type, XL_CHART_TYPE.COLUMN_CLUSTERED)
     if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
         total = sum(values) or 1.0
         values = [v / total for v in values]
-
+    fg = PAPER if dark else INK
+    sub = NIGHT_MUTED if dark else MUTED
     chart_data = CategoryChartData()
     chart_data.categories = labels
     chart_data.add_series("数值", values)
-    gf = s.shapes.add_chart(ct, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5.25), chart_data)
+    gf = slide.shapes.add_chart(ct, Inches(x), Inches(y), Inches(w), Inches(h), chart_data)
     chart = gf.chart
     chart.has_legend = False
     chart.has_title = False
@@ -218,7 +225,7 @@ def add_chart_slide(prs, title, chart_type, data, accent, dark):
     dl = plot.data_labels
     dl.number_format = "0%" if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT) else "0.##"
     dl.number_format_is_linked = False
-    dl.font.size = Pt(11)
+    dl.font.size = Pt(10)
     dl.font.color.rgb = RGBColor.from_string(fg)
     if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
         for i in range(len(labels)):
@@ -227,15 +234,41 @@ def add_chart_slide(prs, title, chart_type, data, accent, dark):
             pt.format.fill.fore_color.rgb = RGBColor.from_string(CHART_PALETTE[i % len(CHART_PALETTE)])
     try:
         ca = chart.category_axis
-        ca.tick_labels.font.size = Pt(12)
+        ca.tick_labels.font.size = Pt(11)
         ca.tick_labels.font.color.rgb = RGBColor.from_string(sub)
         va = chart.value_axis
-        va.tick_labels.font.size = Pt(10)
+        va.tick_labels.font.size = Pt(9)
         va.tick_labels.font.color.rgb = RGBColor.from_string(sub)
         va.has_major_gridlines = True
         va.major_gridlines.format.line.color.rgb = RGBColor.from_string("334155" if dark else "E7E1D3")
     except Exception:
         pass
+    return chart
+
+
+def _add_fitted_image(slide, image_bytes, x, y, w, h):
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        iw, ih = img.size
+        ratio = iw / ih
+        dw = min(w, h * ratio)
+        dh = dw / ratio
+        dx = x + (w - dw) / 2
+        dy = y + (h - dh) / 2
+        slide.shapes.add_picture(io.BytesIO(image_bytes), Inches(dx), Inches(dy), Inches(dw), Inches(dh))
+        return True
+    except Exception:
+        return False
+
+
+def add_chart_slide(prs, title, chart_type, data, accent, dark):
+    s = _blank(prs)
+    bg = NIGHT if dark else PAPER
+    fg = PAPER if dark else INK
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
+    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
+    _text(s, 0.9, 0.82, 11.5, 0.8, title or "数据图表", 28, fg, True)
+    _add_chart(s, chart_type, data, accent, dark, 0.9, 1.8, 11.5, 5.25)
     return s
 
 
@@ -296,27 +329,28 @@ def parse_outline(content):
     title = str(data.get("title") or "").strip() or "AI 生成演示"
     subtitle = str(data.get("subtitle") or "").strip()
     slides = []
-    for item in (data.get("slides") or [])[:10]:
+    for item in (data.get("slides") or [])[:12]:
         t = str(item.get("title") or "").strip() or "未命名页面"
-        bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
-        slides.append({"title": t, "bullets": bullets[:MAX_BULLETS]})
+        bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()][:MAX_BULLETS]
+        chart = None
+        c = item.get("chart")
+        if isinstance(c, dict):
+            ctype = str(c.get("type") or "column").lower()
+            if ctype in CHART_TYPES:
+                rows = []
+                for r in (c.get("data") or []):
+                    if isinstance(r, list) and len(r) >= 2:
+                        try:
+                            rows.append([str(r[0]).strip(), float(r[1])])
+                        except (ValueError, TypeError):
+                            continue
+                if rows:
+                    chart = {"type": ctype, "title": str(c.get("title") or "").strip(), "data": rows}
+        iq = str(item.get("image_query") or "").strip()
+        slides.append({"title": t, "bullets": bullets, "chart": chart, "image_query": iq or None})
     if not slides:
-        slides = [{"title": "内容概览", "bullets": ["请补充更多主题细节后重试"]}]
-    charts = []
-    for c in (data.get("charts") or [])[:1]:
-        ctype = str(c.get("type") or "column").lower()
-        ctitle = str(c.get("title") or "").strip()
-        rows = []
-        for r in (c.get("data") or []):
-            if isinstance(r, list) and len(r) >= 2:
-                try:
-                    rows.append([str(r[0]).strip(), float(r[1])])
-                except (ValueError, TypeError):
-                    continue
-        if rows and ctype in CHART_TYPES:
-            charts.append({"type": ctype, "title": ctitle, "data": rows})
-    queries = [str(q).strip() for q in (data.get("image_queries") or []) if str(q).strip()][:3]
-    return title, subtitle, slides, charts, queries
+        slides = [{"title": "内容概览", "bullets": ["请补充更多主题细节后重试"], "chart": None, "image_query": None}]
+    return title, subtitle, slides
 
 
 def call_llm(topic, requirements, api_key, base_url, model):
@@ -385,17 +419,21 @@ def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, i
     prs.slide_height = Inches(SLIDE_H)
     _cover(prs, title, subtitle, author, accent, dark)
     if not blocks:
-        blocks = [{"title": "从这里开始", "bullets": ["在左侧内容框里输入你的要点", "空行分隔每一页", "每页第一行是标题，其余是要点"]}]
+        blocks = [{"title": "从这里开始", "bullets": ["在左侧内容框里输入你的要点", "空行分隔每一页", "每页第一行是标题，其余是要点"], "chart": None, "image": None}]
     slides = []
     for blk in blocks:
-        bullets = blk["bullets"] or []
+        bullets = blk.get("bullets") or []
         chunks = [bullets[i:i + MAX_BULLETS] for i in range(0, max(1, len(bullets)), MAX_BULLETS)]
-        slides.append((blk["title"], chunks[0]))
-        for extra in chunks[1:]:
-            slides.append((blk["title"] + "（续）", extra))
+        for idx, chunk in enumerate(chunks):
+            slides.append({
+                "title": blk.get("title") if idx == 0 else blk.get("title") + "（续）",
+                "bullets": chunk,
+                "chart": blk.get("chart") if idx == 0 else None,
+                "image": blk.get("image") if idx == 0 else None,
+            })
     total = len(slides)
-    for i, (t, b) in enumerate(slides, start=1):
-        _content(prs, t, b, accent, dark, i, total)
+    for i, sd in enumerate(slides, start=1):
+        _content(prs, sd["title"], sd["bullets"], accent, dark, i, total, sd.get("chart"), sd.get("image"))
     for spec in (charts or []):
         try:
             data = [(str(r[0]), r[1]) for r in (spec.get("data") or []) if len(r) >= 2]
@@ -462,7 +500,7 @@ def generate_ai():
     if not api_key:
         return jsonify({"error": "AI 服务未配置（请站点管理员配置 API Key）"}), 400
     try:
-        title, subtitle, slides, ai_charts, ai_queries = call_llm(
+        title, subtitle, slides = call_llm(
             topic,
             (data.get("requirements") or "").strip(),
             api_key,
@@ -471,24 +509,18 @@ def generate_ai():
         )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 502
-    charts = list(ai_charts) + (data.get("charts") or [])
-    image_slides = []
-    for url in (data.get("images") or []):
-        url = (url or "").strip()
-        if not url:
+    for sd in slides:
+        sd["image"] = None
+        iq = sd.get("image_query")
+        if not iq:
             continue
-        try:
-            image_slides.append((None, fetch_image(url)))
-        except Exception as exc:
-            return jsonify({"error": f"图片下载失败：{url}（{exc}）"}), 400
-    for q in ai_queries:
-        image_url = fetch_wikimedia_image(q)
+        image_url = fetch_wikimedia_image(iq)
         if not image_url:
             continue
         try:
-            image_slides.append((None, fetch_image(image_url)))
+            sd["image"] = fetch_image(image_url)
         except Exception:
-            continue
+            sd["image"] = None
     buf = build_pptx(
         title,
         subtitle,
@@ -496,8 +528,8 @@ def generate_ai():
         data.get("accent") or "blue",
         bool(data.get("dark")),
         (data.get("author") or "").strip(),
-        charts,
-        image_slides,
+        [],
+        [],
     )
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return send_file(
