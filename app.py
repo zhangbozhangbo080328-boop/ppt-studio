@@ -17,6 +17,9 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 import requests
+from PIL import Image
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION
 
 
 def _load_dotenv(path):
@@ -170,6 +173,102 @@ def _ending(prs, subtitle, accent):
     _text(s, 0.9, 5.15, 11.5, 0.5, "由 PPT Studio 生成 · 原生可编辑 PPTX", 15, "94A3B8")
 
 
+CHART_TYPES = {
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "pie": XL_CHART_TYPE.PIE,
+    "doughnut": XL_CHART_TYPE.DOUGHNUT,
+}
+CHART_PALETTE = ["1F3A5F", "3D5A80", "5B6B8C", "B08D3E", "4F6D5A", "7A2E39", "5A7D6C", "A6762D"]
+
+
+def add_chart_slide(prs, title, chart_type, data, accent, dark):
+    s = _blank(prs)
+    bg = NIGHT if dark else PAPER
+    fg = PAPER if dark else INK
+    sub = NIGHT_MUTED if dark else MUTED
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
+    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
+    _text(s, 0.9, 0.82, 11.5, 0.8, title or "数据图表", 28, fg, True)
+
+    labels = [str(d[0]) for d in data]
+    values = [float(d[1]) for d in data]
+    ct = CHART_TYPES.get(chart_type, XL_CHART_TYPE.COLUMN_CLUSTERED)
+    if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
+        total = sum(values) or 1.0
+        values = [v / total for v in values]
+
+    chart_data = CategoryChartData()
+    chart_data.categories = labels
+    chart_data.add_series("数值", values)
+    gf = s.shapes.add_chart(ct, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5.25), chart_data)
+    chart = gf.chart
+    chart.has_legend = False
+    chart.has_title = False
+    plot = chart.plots[0]
+    series = plot.series[0]
+    series.format.fill.solid()
+    series.format.fill.fore_color.rgb = RGBColor.from_string(accent)
+    plot.has_data_labels = True
+    dl = plot.data_labels
+    dl.number_format = "0%" if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT) else "0.##"
+    dl.number_format_is_linked = False
+    dl.font.size = Pt(11)
+    dl.font.color.rgb = RGBColor.from_string(fg)
+    if ct in (XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT):
+        for i in range(len(labels)):
+            pt = series.points[i]
+            pt.format.fill.solid()
+            pt.format.fill.fore_color.rgb = RGBColor.from_string(CHART_PALETTE[i % len(CHART_PALETTE)])
+    try:
+        ca = chart.category_axis
+        ca.tick_labels.font.size = Pt(12)
+        ca.tick_labels.font.color.rgb = RGBColor.from_string(sub)
+        va = chart.value_axis
+        va.tick_labels.font.size = Pt(10)
+        va.tick_labels.font.color.rgb = RGBColor.from_string(sub)
+        va.has_major_gridlines = True
+        va.major_gridlines.format.line.color.rgb = RGBColor.from_string("334155" if dark else "E7E1D3")
+    except Exception:
+        pass
+    return s
+
+
+def add_image_slide(prs, caption, image_bytes, accent, dark):
+    s = _blank(prs)
+    bg = NIGHT if dark else PAPER
+    fg = PAPER if dark else INK
+    _rect(s, 0, 0, SLIDE_W, SLIDE_H, bg)
+    _rect(s, 0, 0, 0.18, SLIDE_H, accent)
+    if caption:
+        _text(s, 0.9, 0.6, 11.5, 0.7, caption, 22, fg, True)
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        iw, ih = img.size
+        max_w, max_h, top = 11.5, 5.5, 1.45
+        ratio = iw / ih
+        w = min(max_w, max_h * ratio)
+        h = w / ratio
+        x = (SLIDE_W - w) / 2
+        y = top + (max_h - h) / 2
+        s.shapes.add_picture(io.BytesIO(image_bytes), Inches(x), Inches(y), Inches(w), Inches(h))
+    except Exception:
+        _text(s, 0.9, 3.2, 11.5, 0.6, "图片无法加载", 20, "DC2626", True)
+    return s
+
+
+def fetch_image(url):
+    if not re.match(r"^https?://", url):
+        raise ValueError("图片地址需以 http:// 或 https:// 开头")
+    resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    if not (resp.headers.get("Content-Type") or "").lower().startswith("image/"):
+        raise ValueError("该地址不是图片")
+    if len(resp.content) > 8 * 1024 * 1024:
+        raise ValueError("图片超过 8MB")
+    return resp.content
+
+
 def parse_blocks(text):
     parts = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
     blocks = []
@@ -230,7 +329,7 @@ def call_llm(topic, requirements, api_key, base_url, model):
     return parse_outline(content)
 
 
-def build_pptx(title, subtitle, blocks, accent_key, dark, author):
+def build_pptx(title, subtitle, blocks, accent_key, dark, author, charts=None, images=None):
     accent = ACCENTS.get(accent_key, ACCENTS["blue"])
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
@@ -248,6 +347,15 @@ def build_pptx(title, subtitle, blocks, accent_key, dark, author):
     total = len(slides)
     for i, (t, b) in enumerate(slides, start=1):
         _content(prs, t, b, accent, dark, i, total)
+    for spec in (charts or []):
+        try:
+            data = [(str(r[0]), r[1]) for r in (spec.get("data") or []) if len(r) >= 2]
+            if data:
+                add_chart_slide(prs, spec.get("title") or "", spec.get("type") or "column", data, accent, dark)
+        except Exception:
+            continue
+    for caption, img_bytes in (images or []):
+        add_image_slide(prs, caption, img_bytes, accent, dark)
     _ending(prs, subtitle, accent)
     buf = io.BytesIO()
     prs.save(buf)
@@ -275,7 +383,17 @@ def generate():
     accent = data.get("accent") or "blue"
     dark = bool(data.get("dark"))
     blocks = parse_blocks(content)
-    buf = build_pptx(title, subtitle, blocks, accent, dark, author)
+    charts = data.get("charts") or []
+    image_slides = []
+    for url in (data.get("images") or []):
+        url = (url or "").strip()
+        if not url:
+            continue
+        try:
+            image_slides.append((None, fetch_image(url)))
+        except Exception as exc:
+            return jsonify({"error": f"图片下载失败：{url}（{exc}）"}), 400
+    buf = build_pptx(title, subtitle, blocks, accent, dark, author, charts, image_slides)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return send_file(
         buf,
