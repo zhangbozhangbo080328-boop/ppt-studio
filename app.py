@@ -191,7 +191,7 @@ SYSTEM_PROMPT = (
     "dark-academia(暗黑学术)、y2k(Y2K酸性)、typographic(大字报)、business(麦肯锡商务)、education(教育学术)、chinese(中式国风)。"
     "如果用户在主题或额外要求里直接点名某种风格（例如「赛博朋克风」「麦肯锡咨询风」「中式」），必须优先满足并把对应 style 填入；"
     "否则根据主题内容自动挑选最热门、最合适的一种。"
-    "要求：共 6-10 页；每页 3-5 个要点；每个要点不超过 22 个汉字；标题简洁有力。"
+    "要求：共 12-18 页，内容要充实完整，宁可多几页也不要删减关键信息；每页 3-5 个要点；每个要点不超过 22 个汉字；标题简洁有力。"
     "在尽可能多的页面自然搭配图表或图片：当该页涉及数据、对比或占比时，加上 chart；"
     "当配图能直观说明该页内容时，加上 image_query。chart 与 image_query 必须与该页文字内容直接相关，且两者都尽量多地在合适页面使用。"
     "chart 的 data 最多 8 项；标签尽量短（不超过 10 个字符）；数值只输出纯数字，不要带百分号、逗号或单位。"
@@ -608,7 +608,7 @@ def parse_outline(content):
     title = str(data.get("title") or "").strip() or "AI 生成演示"
     subtitle = str(data.get("subtitle") or "").strip()
     slides = []
-    for item in (data.get("slides") or [])[:12]:
+    for item in (data.get("slides") or [])[:20]:
         t = str(item.get("title") or "").strip() or "未命名页面"
         bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()][:MAX_BULLETS]
         chart = None
@@ -651,8 +651,9 @@ def call_llm(topic, requirements, api_key, base_url, model):
                 {"role": "user", "content": user_content},
             ],
             "temperature": 0.7,
+            "max_tokens": 8192,
         },
-        timeout=45,
+        timeout=120,
     )
     if resp.status_code != 200:
         detail = resp.text[:240].replace("\n", " ")
