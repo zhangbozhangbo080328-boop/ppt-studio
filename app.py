@@ -191,7 +191,7 @@ SYSTEM_PROMPT = (
     "dark-academia(暗黑学术)、y2k(Y2K酸性)、typographic(大字报)、business(麦肯锡商务)、education(教育学术)、chinese(中式国风)。"
     "如果用户在主题或额外要求里直接点名某种风格（例如「赛博朋克风」「麦肯锡咨询风」「中式」），必须优先满足并把对应 style 填入；"
     "否则根据主题内容自动挑选最热门、最合适的一种。"
-    "要求：共 12-18 页，内容要充实完整，宁可多几页也不要删减关键信息；每页 3-5 个要点；每个要点不超过 22 个汉字；标题简洁有力。"
+    "要求：共 12-18 页，内容要充实完整，宁可多几页也不要删减关键信息；每页 3-5 个要点；每个要点不超过 30 个汉字；标题简洁有力。"
     "在尽可能多的页面自然搭配图表或图片：当该页涉及数据、对比或占比时，加上 chart；"
     "当配图能直观说明该页内容时，加上 image_query。chart 与 image_query 必须与该页文字内容直接相关，且两者都尽量多地在合适页面使用。"
     "chart 的 data 最多 8 项；标签尽量短（不超过 10 个字符）；数值只输出纯数字，不要带百分号、逗号或单位。"
@@ -641,6 +641,16 @@ def call_llm(topic, requirements, api_key, base_url, model):
     user_content = "主题：" + topic
     if requirements:
         user_content += "\n额外要求：" + requirements
+    try:
+        refs = fetch_wiki_knowledge(topic)
+    except Exception:
+        refs = None
+    if refs:
+        user_content += (
+            "\n\n【知识库参考资料】以下是从公开知识库检索到的与主题相关的内容，"
+            "请充分利用其中的事实、数据、人名和术语，让每一页的要点更充实、具体、可信，"
+            "但要用自己的话概括，不要整段照抄：\n" + refs
+        )
     resp = requests.post(
         base + "/chat/completions",
         headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
@@ -692,6 +702,68 @@ def fetch_wikimedia_image(query):
                 return url
     except Exception:
         pass
+    return None
+
+
+def _strip_html(text):
+    return re.sub(r"<[^>]+>", "", text or "")
+
+
+def fetch_wiki_knowledge(query):
+    query = (query or "").strip()
+    if not query:
+        return None
+    for lang in ("zh", "en"):
+        try:
+            base = f"https://{lang}.wikipedia.org/w/api.php"
+            resp = requests.get(
+                base,
+                params={
+                    "action": "query",
+                    "format": "json",
+                    "list": "search",
+                    "srsearch": query,
+                    "srlimit": 4,
+                },
+                timeout=8,
+                headers={"User-Agent": "PPT-Studio/1.0 (knowledge enrichment)"},
+            )
+            titles = [
+                _strip_html(str(r.get("title") or ""))
+                for r in resp.json().get("query", {}).get("search", [])
+            ]
+            titles = [t for t in titles if t][:3]
+            if not titles:
+                continue
+            parts = []
+            for t in titles:
+                try:
+                    r2 = requests.get(
+                        base,
+                        params={
+                            "action": "query",
+                            "format": "json",
+                            "prop": "extracts",
+                            "explaintext": True,
+                            "exintro": True,
+                            "redirects": 1,
+                            "titles": t,
+                        },
+                        timeout=8,
+                        headers={"User-Agent": "PPT-Studio/1.0 (knowledge enrichment)"},
+                    )
+                    pages = r2.json().get("query", {}).get("pages", {})
+                    for p in pages.values():
+                        ext = _strip_html(str(p.get("extract") or "")).strip()
+                        if ext:
+                            parts.append("【" + t + "】\n" + ext[:600])
+                            break
+                except Exception:
+                    continue
+            if parts:
+                return "\n\n".join(parts)[:3000]
+        except Exception:
+            continue
     return None
 
 
