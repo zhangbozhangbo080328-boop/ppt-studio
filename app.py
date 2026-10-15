@@ -677,33 +677,43 @@ def call_llm(topic, requirements, api_key, base_url, model):
     return parse_outline(content)
 
 
-def fetch_wikimedia_image(query):
+IMG_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
+
+
+def fetch_360_image(query):
+    """360 图片搜索（国内图源）：返回一张适合放进幻灯片的图片地址。"""
     try:
-        params = {
-            "action": "query",
-            "format": "json",
-            "generator": "search",
-            "gsrsearch": "filetype:bitmap " + query,
-            "gsrnamespace": "6",
-            "gsrlimit": "1",
-            "prop": "imageinfo",
-            "iiprop": "url",
-            "iiurlwidth": "1600",
-        }
         resp = requests.get(
-            "https://commons.wikimedia.org/w/api.php",
-            params=params,
-            timeout=6,
-            headers={"User-Agent": "PPT-Studio/1.0"},
+            "https://image.so.com/j",
+            params={"q": query, "src": "srp", "sn": 0, "pn": 20},
+            timeout=8,
+            headers={"User-Agent": IMG_UA, "Referer": "https://image.so.com/"},
         )
-        pages = resp.json().get("query", {}).get("pages", {})
-        for page in pages.values():
-            ii = (page.get("imageinfo") or [{}])[0]
-            url = ii.get("thumburl") or ii.get("url")
-            if url:
-                return url
+        items = resp.json().get("list") or []
     except Exception:
-        pass
+        return None
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        url = str(it.get("thumb") or it.get("img") or "").strip()
+        if not url.startswith("http"):
+            continue
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://"):]
+        try:
+            w = int(it.get("width") or 0)
+            h = int(it.get("height") or 0)
+        except (TypeError, ValueError):
+            w, h = 0, 0
+        if w and h and (w < 500 or h < 350):
+            continue
+        m = re.match(r"^([\d.]+)\s*([KM]?B)", str(it.get("imgsize") or "").upper())
+        if m and m.group(2) == "MB" and float(m.group(1)) > 4:
+            continue
+        return url
     return None
 
 
@@ -919,18 +929,30 @@ def generate_ai():
     req_style = (data.get("style") or "auto").strip().lower()
     style_key = req_style if req_style in STYLES else ai_style
     style = resolve_style(style_key, data.get("accent") or "blue", bool(data.get("dark")))
+    targets = []
     for sd in slides:
         sd["image"] = None
-        iq = sd.get("image_query")
-        if not iq:
-            continue
-        image_url = fetch_wikimedia_image(iq)
-        if not image_url:
-            continue
+        iq = (sd.get("image_query") or "").strip()
+        if iq and len(targets) < 8:
+            targets.append((sd, iq))
+
+    def _load_image(iq):
+        url = fetch_360_image(iq)
+        if not url:
+            return None
         try:
-            sd["image"] = fetch_image(image_url)
+            return fetch_image(url)
         except Exception:
-            sd["image"] = None
+            return None
+
+    if targets:
+        try:
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                loaded = list(pool.map(lambda t: _load_image(t[1]), targets))
+            for (sd, _iq), img in zip(targets, loaded):
+                sd["image"] = img
+        except Exception:
+            pass
     buf = build_pptx(
         title,
         subtitle,
